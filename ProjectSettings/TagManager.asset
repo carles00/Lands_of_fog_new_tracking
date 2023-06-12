@@ -3,7 +3,22 @@
 --- !u!78 &1
 TagManager:
   serializedVersion: 2
-  tags: []
+  tags:
+  - free_swarm
+  - Player2
+  - SwarmPlayer2
+  - SwarmPlayer1
+  - SelectionControl
+  - BlendPlane1
+  - BlendPlane0
+  - creature1
+  - prop1
+  - creature1_
+  - creature2
+  - creature2_
+  - prop2
+  - prop3
+  - prop4
   layers:
   - Default
   - TransparentFX

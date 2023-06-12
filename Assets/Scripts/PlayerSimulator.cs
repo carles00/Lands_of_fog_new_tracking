@@ -162,8 +162,6 @@ public class PlayerSimulator: MessageBehaviour
 				Messenger.SendToListeners(new Message(gameObject, "playersarenear",""));	
 			}
 		}
-
-		updatePlayerPosition ();
 	}
 
 	private void CheckCloseToSwarmsToHunt()
