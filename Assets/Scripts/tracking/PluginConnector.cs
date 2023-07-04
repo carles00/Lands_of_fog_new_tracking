@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.IO;
+
 using TMPro;
 using UnityEngine;
 using Newtonsoft.Json;
@@ -18,13 +19,13 @@ public class PluginConnector : MonoBehaviour
     //options for configuration
     [Header("Tracking Options")]
     [SerializeField] private int numberOfPlayers;
-    private int numberOfBaseStations = 4;
-    private bool enableRotation = false;
+    [SerializeField] private int numberOfBaseStations;
+    [SerializeField] private bool enableRotation;
     [SerializeField] private bool enableYAxis;
-    [SerializeField] private bool swapXZ = true;
-    [SerializeField] private bool invertX = true;
-    [SerializeField] private bool invertZ = true;
-    private Vector3 unityWorldCenter = new Vector3(0,0,51.3f); //unity world center !!NOT tracking center!!
+    [SerializeField] private bool swapXZ;
+    [SerializeField] private bool invertX;
+    [SerializeField] private bool invertZ;
+    [SerializeField] private Vector3 unityWorldCenter; //unity world center !!NOT tracking center!!
 
     //list of players (filled from editor)
     [Header("Players")]
@@ -38,8 +39,8 @@ public class PluginConnector : MonoBehaviour
 
     //attributes for tracking calibration
     [Header("Calibration")]
-    [SerializeField] private Vector3 calibrationCenter = new Vector3(0,0,51.3f);
-    [SerializeField] private float calibrationScale = 15.7f;
+    [SerializeField] private Vector3 calibrationCenter;
+    [SerializeField] [Range(1, 20)] private float calibrationScale;
     private Mat2x2 calibrationTransform;
     private float sheerX;
     private float sheerY;
@@ -51,7 +52,7 @@ public class PluginConnector : MonoBehaviour
     //save calibration attributes
     [Header("Save File Path")]
     [Tooltip("Provided path must be absolute <C:/usr/...> . If no path provided, file will be saved at default location")]
-    private string calibrationSaveFilePath = "D:/Unity_Tracking_Default_Config";
+    [SerializeField] private string calibrationSaveFilePath;
     private string calibrationSaveFileName = "trackingCalibration";
     private string fullCalibrationSaveFilePath;
 
@@ -77,10 +78,9 @@ public class PluginConnector : MonoBehaviour
     private const string dllName = "tracking";
     [DllImport(dllName)] private static extern void startTracking(int numberOfPlayers, int numberOfBaseStations);
     [DllImport(dllName)] private static extern void stopTracking();
-    [DllImport(dllName)] private static extern void updatePositions(int arraySize, [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 0)] float[] array, bool rotation);
+    [DllImport(dllName)] private static extern void updatePositions(int arraySize, [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 0)] float[] array);
     [DllImport(dllName)] private static extern int getNumberOfTrackers();
     [DllImport(dllName)] private static extern int getNumberOfBaseStations();
-    [DllImport(dllName)] private static extern int getSize(bool rotation); //not used
 
     void Awake()
     {
@@ -111,7 +111,7 @@ public class PluginConnector : MonoBehaviour
             {
                 if (i<numberOfPlayers)
                 {
-                    playersPositionsText[i].text = Vector3ToString(new Vector3(0, 0, 0));
+                    //playersPositionsText[i].text = Vector3ToString(new Vector3(0, 0, 0));
                 }
             }
         }
@@ -126,6 +126,16 @@ public class PluginConnector : MonoBehaviour
 
     void Start()
     {
+        //assign calibration save File
+        if (calibrationSaveFilePath == "")
+        {
+            calibrationSaveFilePath = Application.persistentDataPath;
+        }
+        fullCalibrationSaveFilePath = calibrationSaveFilePath + "/" + calibrationSaveFileName + ".json";
+
+        //load calibration if saved
+        LoadCalibration();
+
         //set visibility for trackingInterface to false
         trackingInterface.SetActive(isInterfaceActive);
 
@@ -139,19 +149,10 @@ public class PluginConnector : MonoBehaviour
         }
 
         //set the size of the data coming from OpenVR for each player 
-        playerDataSize = enableRotation ? 12 : 3; 
+        playerDataSize = 7; 
 
         //start getNewPositions loop when tracking enabled
         if(enableTracking){
-            //assign calibration save File
-            if (calibrationSaveFilePath == "")
-            {
-                calibrationSaveFilePath = Application.persistentDataPath;
-            }
-            fullCalibrationSaveFilePath = calibrationSaveFilePath + "/" + calibrationSaveFileName + ".json";
-
-            //load calibration if saved
-            LoadCalibration();
             arraySize = numberOfPlayers * playerDataSize;
             StartCoroutine("ExperimentalPositions");
             //startCoroutine("ExperimentalPositions");
@@ -163,18 +164,15 @@ public class PluginConnector : MonoBehaviour
     void Update()
     {
         ListenToControls();
-        
+
+        UpdateInterfaceText();
+
         //if tracking is not enabled move players with keyboard
         if (!enableTracking)
         {
-
             DisabledTrackingPlayerSelector();
 
-            DisabledTrackingPlayerMovement();
-        }
-        else
-        {
-            UpdateInterfaceText();
+            DisabledTrackingPlayerMovement(); 
         }
     }
 
@@ -183,15 +181,14 @@ public class PluginConnector : MonoBehaviour
         for(; ; )
         {
             float[] openVrOutputArr = new float[arraySize];
-            updatePositions(arraySize * sizeof(float), openVrOutputArr, enableRotation);
+            updatePositions(arraySize * sizeof(float), openVrOutputArr);
             
             
             for(int i = 0; i< numberOfPlayers; i++)
             {
                 int playerIndex = i * playerDataSize;
                 //get position from openvr array
-                Vector3 rawPos = enableRotation ? new Vector3(openVrOutputArr[9+playerIndex], openVrOutputArr[10 + playerIndex], openVrOutputArr[11 + playerIndex]) :
-                                                                                new Vector3(openVrOutputArr[0 + playerIndex], openVrOutputArr[1 + playerIndex], openVrOutputArr[2 + playerIndex]);
+                Vector3 rawPos = new Vector3(openVrOutputArr[0 + playerIndex], openVrOutputArr[1 + playerIndex], openVrOutputArr[2 + playerIndex]);
                 
                 
                 //apply orientation options to position without changing calibration.
@@ -214,74 +211,26 @@ public class PluginConnector : MonoBehaviour
                     calibratedPos += unityWorldCenter;
 
                     players[i].GetComponent<PlayerMovement>().setPosition(calibratedPos);
-                    playersPositionsText[i].text = Vector3ToString(calibratedPos);
+                    //playersPositionsText[i].text = Vector3ToString(calibratedPos);
 
                     if(enableRotation)
                     {
-                        //TODO calculate rotatiion
-                        Vector3 column1 = new Vector3(openVrOutputArr[0 + playerIndex], openVrOutputArr[1 + playerIndex], openVrOutputArr[2 + playerIndex]);
-                        Vector3 column2 = new Vector3(openVrOutputArr[3 + playerIndex], openVrOutputArr[4 + playerIndex], openVrOutputArr[5 + playerIndex]);
-                        Vector3 column3 = new Vector3(openVrOutputArr[6 + playerIndex], openVrOutputArr[7 + playerIndex], openVrOutputArr[8 + playerIndex]);
-
-                        Quaternion playerRotation = CalculateRotation(column1, column2, column3);
-                        playersRotationsText[i].text = QuaternionToString(playerRotation);
-                        //players[i].GetComponent<PlayerMovement>().setRotation(playerRotation);
+                        Quaternion playerRotation = new Quaternion(openVrOutputArr[3 + playerIndex], openVrOutputArr[4 + playerIndex], -openVrOutputArr[5 + playerIndex], openVrOutputArr[6 + playerIndex]);
+                        //Debug.Log(QuaternionToString(playerRotation));
+                        //playersRotationsText[i].text = QuaternionToString(playerRotation);
+                        players[i].GetComponent<PlayerMovement>().setRotation(playerRotation);
                     }
                 }
                 else
                 {
                     players[i].GetComponent<PlayerMovement>().setPosition(rawPos);
-                    playersPositionsText[i].text = Vector3ToString(rawPos);
+                    //playersPositionsText[i].text = Vector3ToString(rawPos);
                 }    
             }
             yield return new WaitForSeconds(positionUpdateInterval);
         }
     }
 
-    private Quaternion CalculateRotation(Vector3 c1, Vector3 c2, Vector3 c3)
-    {
-        //Code from Mike Day 
-
-        //row 1 c1.x, c2.x, c3.x -> m00 m01 m02
-        //row 2 c1.y, c2.y, c3.y -> m10 m11 m12
-        //row 3 c1.z, c2.z, c3.z -> m20 m21 m22
-        float trace;
-        Quaternion q; 
-
-        if (c3.z < 0)
-        {
-            if (c1.x > c2.y)
-            {
-                trace = 1 + c1.x - c2.y - c3.z;
-                q = new Quaternion(trace, c2.x + c1.y, c1.z + c3.x, c3.y - c2.z);
-            }
-            else
-            {
-                trace = 1 - c1.x + c2.y - c3.z;
-                q = new Quaternion(c2.x + c1.y, trace, c3.y+c2.z, c1.z - c3.x);
-            }
-        }
-        else
-        {
-            if(c1.x < -c2.y)
-            {
-                trace = 1 - c1.x - c2.y + c3.z;
-                q = new Quaternion(c1.z + c3.x, c3.y + c2.z, trace, c2.x - c1.y);
-            }
-            else
-            {
-                trace = 1 - c1.x + c2.y + c3.z;
-                q = new Quaternion(c3.y - c2.z, c1.z - c3.x, c2.x - c1.y, trace);
-            }
-        }
-        q.w *= 0.5f / Mathf.Sqrt(trace);
-        q.x *= 0.5f / Mathf.Sqrt(trace);
-        q.y *= 0.5f / Mathf.Sqrt(trace);
-        q.z *= 0.5f / Mathf.Sqrt(trace);
-
-        Quaternion testQ = new Quaternion(q.z, q.y, q.z, q.w);
-        return testQ;
-    }
     private void ApplyOrientationOptionsToPos(ref Vector3 pos)
     {
         pos.x = invertX ? -pos.x : pos.x;
@@ -301,6 +250,7 @@ public class PluginConnector : MonoBehaviour
         Vector2 column1 = new Vector2(1, sheerY);
         Vector2 column2 = new Vector2(sheerX, 1);
         calibrationTransform = new Mat2x2(column1, column2);
+        calibrationTransform.Show();
     }
 
     private void Calibrate()
@@ -334,7 +284,7 @@ public class PluginConnector : MonoBehaviour
                 posNorth = players[i].transform.position;
             }
         }
-
+        Debug.Log((posNorth - posSouth).normalized);
         return (posNorth - posSouth).normalized;
     }
 
@@ -359,6 +309,7 @@ public class PluginConnector : MonoBehaviour
                 posEast = players[i].transform.position;
             }
         }
+        Debug.Log((posEast - posWest).normalized);
         return (posEast - posWest).normalized;
     }
 
@@ -384,37 +335,37 @@ public class PluginConnector : MonoBehaviour
             trackingInterface.SetActive(isInterfaceActive);
         }
 
-        if (Input.GetKeyDown(KeyCode.C) && enableTracking)
+        if (Input.GetKeyDown(KeyCode.C))
         {
             Calibrate();
         }
 
-        if (Input.GetKeyDown(KeyCode.UpArrow) && enableTracking)
+        if (Input.GetKeyDown(KeyCode.UpArrow))
         {
             sheerY += 0.01f;
         }
 
-        if (Input.GetKeyDown(KeyCode.DownArrow) && enableTracking)
+        if (Input.GetKeyDown(KeyCode.DownArrow))
         {
             sheerY -= 0.01f;
         }
 
-        if (Input.GetKeyDown(KeyCode.LeftArrow) && enableTracking)
+        if (Input.GetKeyDown(KeyCode.LeftArrow))
         {
             sheerX += 0.01f;
         }
 
-        if (Input.GetKeyDown(KeyCode.RightArrow) && enableTracking)
+        if (Input.GetKeyDown(KeyCode.RightArrow))
         {
             sheerX -= 0.01f;
         }
 
-        if (Input.GetKeyDown(KeyCode.W) && enableTracking)
+        if (Input.GetKeyDown(KeyCode.W))
         {
             calibrationScale += 0.1f;
         }
 
-        if (Input.GetKeyDown(KeyCode.S) && enableTracking)
+        if (Input.GetKeyDown(KeyCode.S))
         {
             calibrationScale -= 0.1f;
         }
@@ -446,6 +397,22 @@ public class PluginConnector : MonoBehaviour
             {
                 playerSelected = 4;
             }
+            if (Input.GetKeyDown(KeyCode.Alpha5))
+            {
+                playerSelected = 5;
+            }
+            if (Input.GetKeyDown(KeyCode.Alpha6))
+            {
+                playerSelected = 6;
+            }
+            if (Input.GetKeyDown(KeyCode.Alpha7))
+            {
+                playerSelected = 7;
+            }
+            if (Input.GetKeyDown(KeyCode.Alpha8))
+            {
+                playerSelected = 8;
+            }
         }
     }
 
@@ -467,14 +434,6 @@ public class PluginConnector : MonoBehaviour
         if (Input.GetKey(KeyCode.D))
         {
             players[playerSelected - 1].transform.Translate(Vector3.right * Time.deltaTime * trackingDisabledPlayerSpeed);
-        }
-        if (Input.GetKey(KeyCode.Q))
-        {
-            players[playerSelected - 1].transform.Translate(Vector3.up * Time.deltaTime * trackingDisabledPlayerSpeed);
-        }
-        if (Input.GetKey(KeyCode.E))
-        {
-            players[playerSelected - 1].transform.Translate(Vector3.down * Time.deltaTime * trackingDisabledPlayerSpeed);
         }
     }
 
